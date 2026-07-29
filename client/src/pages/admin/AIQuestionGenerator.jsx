@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { testApi } from '../../services/testApi';
+import { materialApi } from '../../services/materialApi';
 import { adminApi } from '../../services/adminApi';
-import { Cpu, Upload, FileText, Sparkles, CheckCircle, AlertCircle } from 'lucide-react';
+import { Cpu, Upload, Sparkles, CheckCircle, AlertCircle, FileText } from 'lucide-react';
 import { Button } from '../../components/common/Button';
 import { Input } from '../../components/common/Input';
 
@@ -10,10 +11,17 @@ export const AIQuestionGenerator = () => {
   const navigate = useNavigate();
 
   const [colleges, setColleges] = useState([]);
+  const [materials, setMaterials] = useState([]);
+  const [selectedMaterialId, setSelectedMaterialId] = useState('');
+  
   const [testTitle, setTestTitle] = useState('');
-  const [subjectName, setSubjectName] = useState('Computer Science');
+  const [subject, setSubject] = useState('Computer Science');
   const [questionCount, setQuestionCount] = useState(5);
+  const [duration, setDuration] = useState(30);
+  const [passingMarks, setPassingMarks] = useState(40);
+  const [negativeMarking, setNegativeMarking] = useState(0);
   const [selectedCollege, setSelectedCollege] = useState('');
+  
   const [textInput, setTextInput] = useState('');
   const [file, setFile] = useState(null);
   
@@ -23,17 +31,33 @@ export const AIQuestionGenerator = () => {
 
   useEffect(() => {
     adminApi.getColleges().then(res => {
-      setColleges(res.data || []);
-      if (res.data && res.data.length > 0) {
-        setSelectedCollege(res.data[0]._id);
+      const colList = res.data || [];
+      setColleges(colList);
+      if (colList.length > 0) {
+        setSelectedCollege(colList[0]._id);
       }
-    });
+    }).catch(err => console.error(err));
+
+    materialApi.getMaterials().then(res => {
+      setMaterials(res.data || []);
+    }).catch(err => console.error(err));
   }, []);
+
+  const handleMaterialSelect = (matId) => {
+    setSelectedMaterialId(matId);
+    if (matId) {
+      const mat = materials.find(m => m._id === matId);
+      if (mat) {
+        setSubject(mat.subject || 'General');
+        setTestTitle(`AI Exam: ${mat.title}`);
+      }
+    }
+  };
 
   const handleGenerate = async (e) => {
     e.preventDefault();
-    if (!textInput && !file) {
-      setError('Please enter text contents or select a PDF file');
+    if (!selectedMaterialId && !textInput && !file) {
+      setError('Please select a study material, upload a document, or enter text content');
       return;
     }
 
@@ -42,10 +66,14 @@ export const AIQuestionGenerator = () => {
     setGeneratedResult(null);
 
     const formData = new FormData();
-    formData.append('testTitle', testTitle);
-    formData.append('subjectName', subjectName);
+    formData.append('testTitle', testTitle || `AI Exam - ${subject}`);
+    formData.append('subject', subject);
     formData.append('questionCount', questionCount);
-    formData.append('collegeId', selectedCollege);
+    formData.append('duration', duration);
+    formData.append('passingMarks', passingMarks);
+    formData.append('negativeMarking', negativeMarking);
+    if (selectedCollege) formData.append('collegeId', selectedCollege);
+    if (selectedMaterialId) formData.append('studyMaterialId', selectedMaterialId);
     if (textInput) formData.append('textInput', textInput);
     if (file) formData.append('file', file);
 
@@ -55,7 +83,7 @@ export const AIQuestionGenerator = () => {
         setGeneratedResult(res.data);
       }
     } catch (err) {
-      setError(err.message || 'AI Generation Failed');
+      setError(err.response?.data?.message || err.message || 'Google Gemini AI Question Generation Failed');
     } finally {
       setLoading(false);
     }
@@ -63,21 +91,21 @@ export const AIQuestionGenerator = () => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div className="glass-card p-8 rounded-3xl border border-slate-800 bg-gradient-to-r from-blue-950/40 via-slate-900 to-indigo-950/40 relative overflow-hidden">
+      <div className="glass-card p-8 rounded-3xl border border-slate-800 bg-gradient-to-r from-emerald-950/30 via-slate-900 to-blue-950/30 relative overflow-hidden">
         <div className="flex items-center space-x-3 mb-2">
-          <div className="p-2.5 bg-blue-600/20 text-blue-400 border border-blue-500/30 rounded-xl">
+          <div className="p-2.5 bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 rounded-xl">
             <Cpu className="w-6 h-6 animate-pulse" />
           </div>
-          <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">OpenAI API JSON Pipeline</span>
+          <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Google Gemini API Engine</span>
         </div>
-        <h1 className="text-2xl font-extrabold text-white">AI-Powered Exam Paper Generator</h1>
+        <h1 className="text-2xl font-extrabold text-white">AI Examination Paper Generator</h1>
         <p className="text-xs text-slate-400 mt-1 max-w-xl">
-          Upload PDF lecture notes (with automatic Tesseract OCR fallback for scanned documents) or paste raw text to auto-generate multiple-choice questions matching Mongoose schema.
+          Select uploaded Cloudinary Study Materials (PDF, DOCX, PPT, Images) or paste raw text. Google Gemini API will generate structured MCQs automatically.
         </p>
       </div>
 
       {error && (
-        <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center space-x-2 text-red-400 text-xs font-medium">
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center space-x-2 text-rose-400 text-xs font-medium">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           <span>{error}</span>
         </div>
@@ -86,10 +114,26 @@ export const AIQuestionGenerator = () => {
       {!generatedResult ? (
         <div className="glass-card p-8 rounded-3xl border border-slate-800">
           <form onSubmit={handleGenerate} className="space-y-6">
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                1. Select Cloudinary Study Material (Recommended)
+              </label>
+              <select
+                value={selectedMaterialId}
+                onChange={e => handleMaterialSelect(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 text-slate-100 rounded-lg py-2.5 px-3.5 text-sm focus:outline-none focus:border-blue-500"
+              >
+                <option value="">-- Choose from uploaded study materials --</option>
+                {materials.map(m => (
+                  <option key={m._id} value={m._id}>{m.title} ({m.subject}) - [{m.fileType.toUpperCase()}]</option>
+                ))}
+              </select>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input
-                label="Test Paper Title"
-                placeholder="e.g. Operating Systems Quiz 1"
+                label="Exam Paper Title"
+                placeholder="e.g. Data Structures Midterm AI Exam"
                 value={testTitle}
                 onChange={e => setTestTitle(e.target.value)}
                 required
@@ -98,13 +142,51 @@ export const AIQuestionGenerator = () => {
               <Input
                 label="Subject Name"
                 placeholder="Computer Science"
-                value={subjectName}
-                onChange={e => setSubjectName(e.target.value)}
+                value={subject}
+                onChange={e => setSubject(e.target.value)}
                 required
               />
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <Input
+                label="Questions Count"
+                type="number"
+                min="1"
+                max="20"
+                value={questionCount}
+                onChange={e => setQuestionCount(e.target.value)}
+              />
+
+              <Input
+                label="Duration (Mins)"
+                type="number"
+                min="5"
+                max="180"
+                value={duration}
+                onChange={e => setDuration(e.target.value)}
+              />
+
+              <Input
+                label="Passing Marks %"
+                type="number"
+                min="1"
+                max="100"
+                value={passingMarks}
+                onChange={e => setPassingMarks(e.target.value)}
+              />
+
+              <Input
+                label="Negative Marking"
+                type="number"
+                step="0.25"
+                min="0"
+                value={negativeMarking}
+                onChange={e => setNegativeMarking(e.target.value)}
+              />
+            </div>
+
+            {colleges.length > 0 && (
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
                   Target Tenant College
@@ -119,54 +201,47 @@ export const AIQuestionGenerator = () => {
                   ))}
                 </select>
               </div>
+            )}
 
-              <Input
-                label="Number of Questions to Generate"
-                type="number"
-                min="1"
-                max="20"
-                value={questionCount}
-                onChange={e => setQuestionCount(e.target.value)}
-              />
-            </div>
-
-            {/* Source Content Inputs */}
-            <div className="space-y-4 pt-4 border-t border-slate-800">
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
-                Upload PDF Course Material (with OCR Engine)
-              </label>
-              <div className="border-2 border-dashed border-slate-800 rounded-2xl p-6 text-center hover:border-blue-500/50 transition">
-                <Upload className="w-8 h-8 mx-auto text-slate-500 mb-2" />
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  onChange={e => setFile(e.target.files[0])}
-                  className="hidden"
-                  id="pdf-upload"
-                />
-                <label htmlFor="pdf-upload" className="cursor-pointer text-xs font-semibold text-blue-400 hover:underline">
-                  {file ? file.name : 'Click to upload PDF Document'}
-                </label>
-                <p className="text-[10px] text-slate-500 mt-1">Supports pdf-parse & Tesseract OCR for scanned documents</p>
-              </div>
-
-              <div className="space-y-1.5">
+            {/* Alternative Direct File Upload or Text */}
+            {!selectedMaterialId && (
+              <div className="space-y-4 pt-4 border-t border-slate-800">
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
-                  Or Paste Text Content
+                  Or Upload Document directly (PDF, DOCX, PPT, Image OCR)
                 </label>
-                <textarea
-                  rows={4}
-                  placeholder="Paste syllabus, textbook chapter, or lecture summary text here..."
-                  value={textInput}
-                  onChange={e => setTextInput(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 text-slate-100 rounded-lg p-3 text-sm focus:outline-none focus:border-blue-500"
-                />
-              </div>
-            </div>
+                <div className="border-2 border-dashed border-slate-800 rounded-2xl p-6 text-center hover:border-blue-500/50 transition">
+                  <Upload className="w-8 h-8 mx-auto text-slate-500 mb-2" />
+                  <input
+                    type="file"
+                    accept=".pdf,.docx,.doc,.ppt,.pptx,.png,.jpg,.jpeg"
+                    onChange={e => setFile(e.target.files[0])}
+                    className="hidden"
+                    id="doc-upload"
+                  />
+                  <label htmlFor="doc-upload" className="cursor-pointer text-xs font-semibold text-blue-400 hover:underline">
+                    {file ? file.name : 'Click to select document'}
+                  </label>
+                  <p className="text-[10px] text-slate-500 mt-1">Supports PDF, DOCX, PPT, and Scanned Image OCR text extraction</p>
+                </div>
 
-            <Button type="submit" isLoading={loading} className="w-full py-3">
-              <Sparkles className="w-4 h-4 mr-2 text-amber-400" />
-              Generate Exam via OpenAI Pipeline
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                    Or Paste Text Content
+                  </label>
+                  <textarea
+                    rows={4}
+                    placeholder="Paste syllabus, lecture notes, or chapter text here..."
+                    value={textInput}
+                    onChange={e => setTextInput(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 text-slate-100 rounded-lg p-3 text-sm focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            <Button type="submit" isLoading={loading} className="w-full py-3 bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500">
+              <Sparkles className="w-4 h-4 mr-2 text-amber-300" />
+              Generate Exam via Google Gemini API
             </Button>
           </form>
         </div>
@@ -176,7 +251,7 @@ export const AIQuestionGenerator = () => {
             <div className="flex items-center space-x-3">
               <CheckCircle className="w-6 h-6 text-emerald-400" />
               <div>
-                <h3 className="text-base font-bold text-white">Generation Complete!</h3>
+                <h3 className="text-base font-bold text-white">Google Gemini Question Generation Complete!</h3>
                 <p className="text-xs text-slate-400">Created {generatedResult.questionCount} questions for "{generatedResult.test?.title}"</p>
               </div>
             </div>
@@ -190,17 +265,24 @@ export const AIQuestionGenerator = () => {
               <div key={q._id || idx} className="glass-card p-6 rounded-2xl border border-slate-800 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-400">Question {idx + 1} ({q.difficulty})</span>
-                  <span className="text-xs font-mono text-emerald-400">Correct: Option {q.correctAnswer}</span>
+                  <span className="text-xs font-mono text-emerald-400 font-bold">Correct Option: {q.correctAnswer}</span>
                 </div>
-                <p className="text-sm font-semibold text-white">{q.questionText}</p>
+                <p className="text-sm font-semibold text-white">{q.questionText || q.question}</p>
                 <div className="grid grid-cols-2 gap-2">
-                  {q.options?.map(opt => (
-                    <div key={opt.key} className={`p-2.5 rounded-xl border text-xs ${
-                      opt.key === q.correctAnswer ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300 font-bold' : 'bg-slate-900 border-slate-800 text-slate-400'
-                    }`}>
-                      <span className="mr-2 text-slate-500">{opt.key}.</span> {opt.text}
-                    </div>
-                  ))}
+                  {q.options?.map((opt, oIdx) => {
+                    const keysMap = ['A', 'B', 'C', 'D'];
+                    const optKey = typeof opt === 'object' && opt !== null ? (opt.key || keysMap[oIdx]) : keysMap[oIdx];
+                    const optText = typeof opt === 'object' && opt !== null ? (opt.text || '') : String(opt);
+                    const isCorrect = q.correctAnswer === optKey || q.correctAnswer === oIdx || q.correctAnswer === String(oIdx);
+
+                    return (
+                      <div key={optKey} className={`p-2.5 rounded-xl border text-xs ${
+                        isCorrect ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300 font-bold' : 'bg-slate-900 border-slate-800 text-slate-400'
+                      }`}>
+                        <span className="mr-2 text-slate-500">{optKey}.</span> {optText}
+                      </div>
+                    );
+                  })}
                 </div>
                 {q.explanation && (
                   <p className="text-xs text-slate-400 bg-slate-900/60 p-3 rounded-xl border border-slate-800">

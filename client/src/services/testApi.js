@@ -9,6 +9,7 @@ export const testApi = {
   generateTestWithAI: (formData) => api.post('/tests/generate-ai', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
+  getAllQuestions: (params) => api.get('/tests/questions/bank/all', { params }),
   getQuestionsByTest: (testId, mode) => api.get(`/tests/${testId}/questions`, { params: { mode } }),
   addQuestion: (data) => api.post('/tests/questions', data),
   deleteQuestion: (id) => api.delete(`/tests/questions/${id}`),

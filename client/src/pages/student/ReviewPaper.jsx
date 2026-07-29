@@ -60,23 +60,27 @@ export const ReviewPaper = () => {
                   </span>
                 </div>
 
-                <h4 className="text-base font-semibold text-white">{q.questionText}</h4>
+                <h4 className="text-base font-semibold text-white">{q.questionText || q.question}</h4>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {q.options?.map(opt => {
-                    const isUserChoice = ans.selectedOption === opt.key;
-                    const isCorrectChoice = q.correctAnswer === opt.key;
+                  {q.options?.map((opt, oIdx) => {
+                    const keysMap = ['A', 'B', 'C', 'D'];
+                    const optKey = typeof opt === 'object' && opt !== null ? (opt.key || keysMap[oIdx]) : keysMap[oIdx];
+                    const optText = typeof opt === 'object' && opt !== null ? (opt.text || '') : String(opt);
+
+                    const isUserChoice = ans.selectedOption === optKey;
+                    const isCorrectChoice = q.correctAnswer === optKey;
 
                     let style = 'bg-slate-900 border-slate-800 text-slate-400';
                     if (isCorrectChoice) style = 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 font-bold';
                     else if (isUserChoice && !isCorrectChoice) style = 'bg-rose-500/20 border-rose-500/50 text-rose-300 font-bold';
 
                     return (
-                      <div key={opt.key} className={`p-3 rounded-xl border text-xs flex items-center ${style}`}>
+                      <div key={optKey} className={`p-3 rounded-xl border text-xs flex items-center ${style}`}>
                         <span className="w-6 h-6 rounded-lg bg-slate-800 flex items-center justify-center font-bold mr-3">
-                          {opt.key}
+                          {optKey}
                         </span>
-                        <span>{opt.text}</span>
+                        <span>{optText}</span>
                       </div>
                     );
                   })}

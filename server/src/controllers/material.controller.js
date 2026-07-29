@@ -1,11 +1,15 @@
 import { Material } from '../models/Material.js';
 import { ApiError } from '../utils/apiError.js';
 import { ApiResponse } from '../utils/apiResponse.js';
-import cloudinary from '../config/cloudinary.js';
+import { uploadToCloudinary, deleteFromCloudinary } from '../services/cloudinary.service.js';
 
 export const uploadMaterial = async (req, res, next) => {
   try {
-    const { title, description, subjectId, department, semester, collegeId } = req.body;
+    const { title, description, subject, department, semester, collegeId } = req.body;
+
+    if (!req.file) {
+      throw new ApiError(400, 'Please attach a study material file (PDF, DOCX, PPT, or Image)');
+    }
 
     if (!title) {
       throw new ApiError(400, 'Material title is required');
@@ -14,46 +18,39 @@ export const uploadMaterial = async (req, res, next) => {
     const assignedCollegeId = req.user.role === 'Admin' ? (collegeId || req.user.collegeId) : req.user.collegeId;
 
     if (!assignedCollegeId) {
-      throw new ApiError(400, 'College ID is required to associate learning material');
+      throw new ApiError(400, 'College ID is required to upload study material');
     }
 
-    let fileUrl = '';
+    // Determine file type from extension
+    const ext = req.file.originalname.split('.').pop().toLowerCase();
     let fileType = 'pdf';
+    if (['docx', 'doc'].includes(ext)) fileType = 'docx';
+    else if (['ppt', 'pptx'].includes(ext)) fileType = 'ppt';
+    else if (['png', 'jpg', 'jpeg', 'webp', 'bmp'].includes(ext)) fileType = 'image';
 
-    if (req.file) {
-      if (req.file.mimetype.includes('image')) {
-        fileType = 'image';
-      }
+    // 1. Upload to Cloudinary
+    const cloudinaryData = await uploadToCloudinary(req.file.path, 'educloud_materials');
 
-      // If Cloudinary configured, upload to Cloudinary; otherwise store local server path
-      if (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY) {
-        const uploadResult = await cloudinary.uploader.upload(req.file.path, {
-          resource_type: 'auto',
-          folder: 'college_lms_materials'
-        });
-        fileUrl = uploadResult.secure_url;
-      } else {
-        fileUrl = `/uploads/${req.file.filename}`;
-      }
-    } else if (req.body.fileUrl) {
-      fileUrl = req.body.fileUrl;
-    } else {
-      throw new ApiError(400, 'File upload or file URL is required');
-    }
-
+    // 2. Save metadata in MongoDB
     const material = await Material.create({
       title,
       description: description || '',
-      fileUrl,
-      fileType,
-      subjectId: subjectId || null,
+      subject: subject || 'General',
       department: department || 'General',
       semester: semester ? parseInt(semester) : 1,
       collegeId: assignedCollegeId,
-      uploadedBy: req.user._id
+      uploadedBy: req.user._id,
+      cloudinaryPublicId: cloudinaryData.publicId,
+      cloudinaryUrl: cloudinaryData.secureUrl,
+      fileType,
+      fileSize: cloudinaryData.bytes || req.file.size || 0
     });
 
-    res.status(201).json(new ApiResponse(201, material, 'Material uploaded successfully'));
+    const populated = await Material.findById(material._id)
+      .populate('uploadedBy', 'name email')
+      .populate('collegeId', 'name code');
+
+    res.status(201).json(new ApiResponse(201, populated, 'Study material uploaded successfully to Cloudinary'));
   } catch (error) {
     next(error);
   }
@@ -63,22 +60,32 @@ export const getMaterials = async (req, res, next) => {
   try {
     const filter = {};
 
-    // Strict Tenant Isolation
+    // Strict Tenant Scoping
     if (req.user.role === 'Student') {
       filter.collegeId = req.user.collegeId;
     } else if (req.tenantCollegeId) {
       filter.collegeId = req.tenantCollegeId;
     }
 
+    if (req.query.subject) filter.subject = new RegExp(req.query.subject, 'i');
     if (req.query.department) filter.department = req.query.department;
-    if (req.query.semester) filter.semester = req.query.semester;
+    if (req.query.semester) filter.semester = parseInt(req.query.semester);
+    if (req.query.fileType) filter.fileType = req.query.fileType;
+
+    if (req.query.search) {
+      filter.$or = [
+        { title: new RegExp(req.query.search, 'i') },
+        { description: new RegExp(req.query.search, 'i') },
+        { subject: new RegExp(req.query.search, 'i') }
+      ];
+    }
 
     const materials = await Material.find(filter)
       .populate('uploadedBy', 'name email')
-      .populate('subjectId', 'name code')
+      .populate('collegeId', 'name code')
       .sort({ createdAt: -1 });
 
-    res.status(200).json(new ApiResponse(200, materials, 'Materials retrieved successfully'));
+    res.status(200).json(new ApiResponse(200, materials, 'Study materials retrieved successfully'));
   } catch (error) {
     next(error);
   }
@@ -91,15 +98,15 @@ export const getMaterialById = async (req, res, next) => {
       .populate('collegeId', 'name code');
 
     if (!material) {
-      throw new ApiError(404, 'Material asset not found');
+      throw new ApiError(404, 'Study material not found');
     }
 
-    // Enforce Tenant Access Limit
+    // Tenant Isolation Check
     if (req.user.role === 'Student' && material.collegeId._id.toString() !== req.user.collegeId.toString()) {
-      throw new ApiError(403, 'Tenant Isolation Violation: Access denied to materials of other colleges');
+      throw new ApiError(403, 'Tenant Isolation Error: Access denied to material from another college');
     }
 
-    res.status(200).json(new ApiResponse(200, material, 'Material details retrieved successfully'));
+    res.status(200).json(new ApiResponse(200, material, 'Material details fetched successfully'));
   } catch (error) {
     next(error);
   }
@@ -108,12 +115,20 @@ export const getMaterialById = async (req, res, next) => {
 export const deleteMaterial = async (req, res, next) => {
   try {
     const material = await Material.findById(req.params.id);
+
     if (!material) {
-      throw new ApiError(404, 'Material not found');
+      throw new ApiError(404, 'Study material not found');
     }
 
+    // 1. Delete file from Cloudinary
+    if (material.cloudinaryPublicId) {
+      await deleteFromCloudinary(material.cloudinaryPublicId, material.fileType === 'image' ? 'image' : 'raw');
+    }
+
+    // 2. Delete document from MongoDB
     await material.deleteOne();
-    res.status(200).json(new ApiResponse(200, null, 'Material deleted successfully'));
+
+    res.status(200).json(new ApiResponse(200, null, 'Study material deleted from Cloudinary and database'));
   } catch (error) {
     next(error);
   }

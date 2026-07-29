@@ -4,8 +4,9 @@ const testSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
     description: { type: String, default: '' },
-    collegeId: { type: mongoose.Schema.Types.ObjectId, ref: 'College', required: true },
-    subjectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Subject' },
+    collegeId: { type: mongoose.Schema.Types.ObjectId, ref: 'College', required: true, index: true },
+    studyMaterialId: { type: mongoose.Schema.Types.ObjectId, ref: 'Material' },
+    subject: { type: String, default: 'General' },
     department: { type: String, default: 'General' },
     duration: { type: Number, required: true, default: 30 }, // in minutes
     passingMarks: { type: Number, required: true, default: 40 },
@@ -14,7 +15,7 @@ const testSchema = new mongoose.Schema(
     shuffleQuestions: { type: Boolean, default: true },
     shuffleOptions: { type: Boolean, default: true },
     schedule: {
-      startDate: { type: Date, required: true, default: Date.now },
+      startDate: { type: Date, default: Date.now },
       endDate: { type: Date, required: true }
     },
     isResultPublished: { type: Boolean, default: true },

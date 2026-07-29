@@ -7,6 +7,7 @@ import cron from 'node-cron';
 
 import { connectDB } from './config/db.js';
 import { errorHandler } from './middlewares/error.middleware.js';
+import { applySecurityMiddlewares } from './middlewares/security.middleware.js';
 
 // Route imports
 import authRoutes from './routes/auth.routes.js';
@@ -18,9 +19,8 @@ import resultRoutes from './routes/result.routes.js';
 import leaderboardRoutes from './routes/leaderboard.routes.js';
 import notificationRoutes from './routes/notification.routes.js';
 
-// Models for seed data
+// Models & Services for cron tasks
 import { College } from './models/College.js';
-import { User } from './models/User.js';
 import { updateCollegeLeaderboard } from './services/leaderboard.service.js';
 
 dotenv.config();
@@ -31,21 +31,25 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Connect to MongoDB
+// Connect to MongoDB Database
 connectDB();
 
-// Express Middlewares
+// Express Security Middlewares (Helmet, Rate Limiter, Mongo Sanitize)
+applySecurityMiddlewares(app);
+
+// CORS Policy
 app.use(cors({
   origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
   credentials: true
 }));
+
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // Static directory for uploaded files
 app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
 
-// Register Routes
+// Register API Routes
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/colleges', collegeRoutes);
 app.use('/api/v1/students', studentRoutes);
@@ -57,13 +61,13 @@ app.use('/api/v1/notifications', notificationRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'OK', message: 'College LMS Server is healthy', timestamp: new Date() });
+  res.status(200).json({ status: 'OK', message: 'EduCloud AI LMS Server is healthy', timestamp: new Date() });
 });
 
 // Global Error Middleware
 app.use(errorHandler);
 
-// Scheduled Node-Cron Task: Hourly Leaderboard Recalculation across all active colleges
+// Scheduled Node-Cron Task: Hourly Leaderboard Recalculation across all active college tenants
 cron.schedule('0 * * * *', async () => {
   console.log('[Cron Job] Running automated hourly leaderboard recalculation...');
   try {
@@ -76,49 +80,6 @@ cron.schedule('0 * * * *', async () => {
   }
 });
 
-// Seed Initial Demo Colleges and Users if database is empty
-async function seedDefaultData() {
-  try {
-    const collegeCount = await College.countDocuments();
-    if (collegeCount === 0) {
-      console.log('Seeding default Demo Colleges and Users...');
-      const demoCollege = await College.create({
-        name: 'Apex Institute of Technology',
-        code: 'AIT2026',
-        address: '100 Innovation Parkway, Tech Campus',
-        contactEmail: 'admin@ait.edu'
-      });
-
-      await User.create({
-        name: 'Super Admin',
-        email: 'admin@lms.com',
-        password: 'password123',
-        role: 'Admin',
-        collegeId: demoCollege._id
-      });
-
-      await User.create({
-        name: 'Alex Johnson',
-        email: 'student@lms.com',
-        password: 'password123',
-        role: 'Student',
-        collegeId: demoCollege._id,
-        department: 'Computer Science',
-        year: 3,
-        rollNumber: 'CS2026-042'
-      });
-
-      console.log('Database seeded successfully!');
-      console.log('Admin Login: admin@lms.com / password123');
-      console.log('Student Login: student@lms.com / password123');
-    }
-  } catch (error) {
-    console.error('Seed Error:', error.message);
-  }
-}
-
-seedDefaultData();
-
 app.listen(PORT, () => {
-  console.log(`🚀 College LMS Backend Server running on port ${PORT}`);
+  console.log(`🚀 EduCloud AI Multi-Tenant LMS Backend running on port ${PORT}`);
 });

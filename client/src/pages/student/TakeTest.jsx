@@ -142,17 +142,21 @@ export const TakeTest = () => {
 
               {/* Question Stem */}
               <h3 className="text-lg font-semibold text-white mb-6 leading-relaxed">
-                {currentQ.questionText}
+                {currentQ.questionText || currentQ.question}
               </h3>
 
               {/* Options Grid */}
               <div className="space-y-3">
-                {currentQ.options?.map(opt => {
-                  const isSelected = userAnswers[currentQ._id] === opt.key;
+                {currentQ.options?.map((opt, oIdx) => {
+                  const keysMap = ['A', 'B', 'C', 'D'];
+                  const optKey = typeof opt === 'object' && opt !== null ? (opt.key || keysMap[oIdx]) : keysMap[oIdx];
+                  const optText = typeof opt === 'object' && opt !== null ? (opt.text || '') : String(opt);
+                  const isSelected = userAnswers[currentQ._id] === optKey;
+
                   return (
                     <button
-                      key={opt.key}
-                      onClick={() => handleOptionSelect(opt.key)}
+                      key={optKey}
+                      onClick={() => handleOptionSelect(optKey)}
                       className={`w-full flex items-center p-4 rounded-2xl border text-left transition duration-200 ${
                         isSelected
                           ? 'bg-blue-600/20 border-blue-500 text-white shadow-lg shadow-blue-500/10'
@@ -162,9 +166,9 @@ export const TakeTest = () => {
                       <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm mr-4 ${
                         isSelected ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'
                       }`}>
-                        {opt.key}
+                        {optKey}
                       </div>
-                      <span className="text-sm font-medium">{opt.text}</span>
+                      <span className="text-sm font-medium">{optText}</span>
                     </button>
                   );
                 })}

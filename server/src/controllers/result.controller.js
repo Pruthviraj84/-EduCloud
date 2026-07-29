@@ -53,8 +53,12 @@ export const submitTestResult = async (req, res, next) => {
       questionsMap[q._id.toString()] = q;
     });
 
+    console.log(`[Exam Submitted] Student ${req.user._id} (${req.user.name}) submitted exam for Test ID: ${testId}`);
+
     // Calculate marks and percentage using algorithm
     const resultMetrics = calculateResult(test, questionsMap, answers);
+
+    console.log(`[Result Calculated] Score: ${resultMetrics.totalScore}, Percentage: ${resultMetrics.percentage}%, Status: ${resultMetrics.status}`);
 
     const result = await Result.create({
       studentId: req.user._id,
@@ -68,8 +72,12 @@ export const submitTestResult = async (req, res, next) => {
       submittedAt: now
     });
 
+    console.log(`[Result Saved in MongoDB] Result ID: ${result._id}`);
+
     // Asynchronously trigger updated college leaderboard calculations
-    updateCollegeLeaderboard(test.collegeId).catch(err => console.error('Async Leaderboard Update Error:', err));
+    updateCollegeLeaderboard(test.collegeId)
+      .then(() => console.log(`[Leaderboard Updated] College tenant ${test.collegeId} leaderboard recalculation completed.`))
+      .catch(err => console.error('[Leaderboard Update Error]', err));
 
     res.status(201).json(
       new ApiResponse(201, { result, isLateSubmission }, 'Test submitted and graded successfully')

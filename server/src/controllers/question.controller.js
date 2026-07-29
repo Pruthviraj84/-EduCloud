@@ -5,20 +5,24 @@ import { ApiResponse } from '../utils/apiResponse.js';
 
 export const addQuestionToTest = async (req, res, next) => {
   try {
-    const { testId, questionText, options, correctAnswer, explanation, marks, difficulty, source } = req.body;
+    const { testId, studyMaterialId, subject, questionText, options, correctAnswer, explanation, marks, difficulty, source, collegeId } = req.body;
 
-    if (!testId || !questionText || !options || !correctAnswer) {
-      throw new ApiError(400, 'Test ID, question text, options, and correct answer are required');
+    if (!questionText || !options || !correctAnswer) {
+      throw new ApiError(400, 'Question text, options, and correct answer are required');
     }
 
-    const test = await Test.findById(testId);
-    if (!test) {
-      throw new ApiError(404, 'Test not found');
+    const assignedCollegeId = req.user.role === 'Admin' ? (collegeId || req.user.collegeId) : req.user.collegeId;
+
+    let targetTest = null;
+    if (testId) {
+      targetTest = await Test.findById(testId);
     }
 
     const question = await Question.create({
-      testId,
-      collegeId: test.collegeId,
+      testId: testId || null,
+      collegeId: targetTest ? targetTest.collegeId : assignedCollegeId,
+      studyMaterialId: studyMaterialId || null,
+      subject: subject || (targetTest ? targetTest.subject : 'General'),
       questionText,
       options,
       correctAnswer,
@@ -28,10 +32,12 @@ export const addQuestionToTest = async (req, res, next) => {
       source: source || 'Manual'
     });
 
-    test.questions.push(question._id);
-    await test.save();
+    if (targetTest) {
+      targetTest.questions.push(question._id);
+      await targetTest.save();
+    }
 
-    res.status(201).json(new ApiResponse(201, question, 'Question added successfully'));
+    res.status(201).json(new ApiResponse(201, question, 'Question created successfully'));
   } catch (error) {
     next(error);
   }
@@ -56,6 +62,7 @@ export const getQuestionsByTest = async (req, res, next) => {
       const sanitizedQuestions = questions.map(q => ({
         _id: q._id,
         questionText: q.questionText,
+        question: q.questionText,
         options: q.options,
         marks: q.marks,
         difficulty: q.difficulty
@@ -64,6 +71,36 @@ export const getQuestionsByTest = async (req, res, next) => {
     }
 
     res.status(200).json(new ApiResponse(200, questions, 'Questions fetched successfully'));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getAllQuestions = async (req, res, next) => {
+  try {
+    const filter = {};
+
+    if (req.user.role === 'Student') {
+      filter.collegeId = req.user.collegeId;
+    } else if (req.tenantCollegeId) {
+      filter.collegeId = req.tenantCollegeId;
+    }
+
+    if (req.query.subject) filter.subject = new RegExp(req.query.subject, 'i');
+    if (req.query.difficulty) filter.difficulty = req.query.difficulty;
+    if (req.query.source) filter.source = req.query.source;
+    if (req.query.studyMaterialId) filter.studyMaterialId = req.query.studyMaterialId;
+
+    if (req.query.search) {
+      filter.questionText = new RegExp(req.query.search, 'i');
+    }
+
+    const questions = await Question.find(filter)
+      .populate('studyMaterialId', 'title fileType')
+      .populate('testId', 'title')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json(new ApiResponse(200, questions, 'Question bank loaded successfully'));
   } catch (error) {
     next(error);
   }
